@@ -1,0 +1,38 @@
+# Fiasco microkernel build tasks.
+#
+# Maps to the "Building the L4Re Microkernel" section of
+# https://l4re.org/getting_started/make.html
+
+version: '3'
+
+tasks:
+  init:
+    desc: Initialise the Fiasco build directory
+    status:
+      - test -f '{{.KERNEL_OBJDIR}}/Makefile'
+    preconditions:
+      - sh: test -d '{{.KERNEL_SRCDIR}}'
+        msg: 'Fiasco sources missing. Run: task sources:sync'
+    cmds:
+      # Fiasco's `make B=...` creates the build directory itself and refuses
+      # to proceed if it already exists. Ensure only the parent exists.
+      - mkdir -p "$(dirname '{{.KERNEL_OBJDIR}}')"
+      - make -C '{{.KERNEL_SRCDIR}}' B='{{.KERNEL_OBJDIR}}'
+
+  build:
+    desc: Build the Fiasco microkernel
+    deps: [init]
+    cmds:
+      - make -C '{{.KERNEL_OBJDIR}}' -j{{.JOBS}}
+
+  config:
+    desc: Open the Fiasco build configuration menu (interactive)
+    deps: [init]
+    interactive: true
+    cmds:
+      - make -C '{{.KERNEL_OBJDIR}}' config
+
+  clean:
+    desc: Remove the Fiasco build directory
+    cmds:
+      - rm -rf '{{.KERNEL_OBJDIR}}'

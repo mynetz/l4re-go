@@ -1,0 +1,64 @@
+# Top-level Taskfile for the l4re-go-prj integration project.
+#
+# Wraps the L4Re GNU Make tutorial (https://l4re.org/getting_started/make.html)
+# with project-specific output paths and a vendored manifest.
+# See docs/build-system.md and docs/tutorial-mapping.md for details.
+
+version: '3'
+
+vars:
+  # Target architecture. Default amd64/x86_64. Override with: task ARCH=arm64 ...
+  ARCH: '{{.ARCH | default "x86_64"}}'
+
+  # Repository root (absolute path of the directory containing this Taskfile).
+  # Resolved at load time via a dynamic variable so included sub-taskfiles
+  # inherit the root path instead of re-evaluating {{.TASKFILE_DIR}} against
+  # their own location.
+  REPO_ROOT:
+    sh: pwd
+
+  # Source tree locations (populated by ham; gitignored).
+  SOURCES_DIR: '{{.REPO_ROOT}}/sources'
+  L4RE_SRCDIR: '{{.REPO_ROOT}}/sources/l4re'
+  KERNEL_SRCDIR: '{{.REPO_ROOT}}/sources/fiasco'
+
+  # Build output locations.
+  L4RE_OBJDIR: '{{.REPO_ROOT}}/output/build/l4re/{{.ARCH}}'
+  KERNEL_OBJDIR: '{{.REPO_ROOT}}/output/build/fiasco/{{.ARCH}}'
+
+  # Vendored ham manifest (see config/manifest/default.xml).
+  MANIFEST: '{{.REPO_ROOT}}/config/manifest/default.xml'
+
+  # Default parallel jobs for make.
+  JOBS: '{{.JOBS | default "9"}}'
+
+includes:
+  sources: ./taskfiles/sources.yml
+  fiasco:  ./taskfiles/fiasco.yml
+  l4re:    ./taskfiles/l4re.yml
+  qemu:    ./taskfiles/qemu.yml
+
+tasks:
+  default:
+    desc: List available tasks
+    cmds:
+      - task --list
+
+  bootstrap:
+    desc: Full first-time setup (sync sources, build fiasco + l4re)
+    cmds:
+      - task: sources:sync
+      - task: fiasco:build
+      - task: l4re:build
+
+  clean:
+    desc: Remove build outputs (keeps sources)
+    cmds:
+      - rm -rf '{{.REPO_ROOT}}/output/build'
+
+  distclean:
+    desc: Remove build outputs AND fetched sources (does not remove tools/ham)
+    prompt: This will delete sources/ and output/. Continue?
+    cmds:
+      - rm -rf '{{.REPO_ROOT}}/output'
+      - rm -rf '{{.REPO_ROOT}}/sources'

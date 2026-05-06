@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Vendored L4Re manifest for the l4re-go-prj integration project.
+
+  Upstream:    https://github.com/L4Re/manifest
+  Branch:      main
+  Commit SHA:  5ff21e46799a4f333fb5ebc5a44d89c76474101b
+  Fetched:     2026-05-06
+
+  Transformations applied vs. upstream:
+    1. Path rename:
+         every  path="l4"        becomes  path="l4re"
+         every  path="l4/..."    becomes  path="l4re/..."
+         ('fiasco' is left untouched)
+    2. Absolute remote URL:
+         <remote fetch="..">  becomes  <remote fetch="https://github.com/L4Re">
+       (Upstream resolves ".." against the manifest repository URL; with
+       'ham init -f' there is no manifest URL, so we use an absolute base.)
+
+  Rationale: the integration project keeps the L4Re source tree under
+  sources/l4re/ instead of sources/l4/ for naming consistency.
+  See docs/manifest.md and docs/conventions.md for details.
+
+  This file is consumed by 'ham init -f' (see taskfiles/sources.yml).
+-->
+<manifest>
+  <remote
+    name="origin"
+    fetch="https://github.com/L4Re"
+    review="https://github.com/L4Re"
+  />
+  <default
+    remote="origin"
+  />
+  <project name="acpica" path="l4re/pkg/acpica" />
+  <project name="ada" path="l4re/pkg/ada" />
+  <project name="ahci-driver" path="l4re/pkg/ahci-driver" />
+  <project name="atkins" path="l4re/pkg/atkins" />
+  <project name="bcm2835-mbox-driver" path="l4re/pkg/bcm2835-mbox-driver" />
+  <project name="bootstrap" path="l4re/pkg/bootstrap" />
+  <project name="cons" path="l4re/pkg/cons" />
+  <project name="drivers-frst" path="l4re/pkg/drivers-frst" />
+  <project name="emmc-driver" path="l4re/pkg/emmc-driver" />
+  <project name="gnu-efi" path="l4re/pkg/gnu-efi" />
+  <project name="fiasco" path="fiasco" />
+  <project name="hello" path="l4re/pkg/hello" />
+  <project name="i2c-driver" path="l4re/pkg/i2c-driver" />
+  <project name="io" path="l4re/pkg/io" />
+  <project name="l4_virtio-net-switch" path="l4re/pkg/virtio-net-switch" />
+  <project name="l4re-core" path="l4re/pkg/l4re-core" />
+  <project name="l4virtio" path="l4re/pkg/l4virtio" />
+  <project name="libblock-device" path="l4re/pkg/libblock-device" />
+  <project name="libfdt" path="l4re/pkg/libfdt" />
+  <project name="libvcpu" path="l4re/pkg/libvcpu" />
+  <project name="mk" path="l4re" />
+  <project name="nvme-driver" path="l4re/pkg/nvme-driver" />
+  <project name="readline" path="l4re/pkg/readline" />
+  <project name="rtc" path="l4re/pkg/rtc" />
+  <project name="spi-driver" path="l4re/pkg/spi-driver" />
+  <project name="tegra-soc-driver" path="l4re/pkg/tegra-soc-driver" />
+  <project name="tinit" path="l4re/pkg/tinit" />
+  <project name="tvmm" path="l4re/pkg/tvmm" />
+  <project name="uvmm" path="l4re/pkg/uvmm" />
+  <project name="virtio-net" path="l4re/pkg/virtio-net" />
+  <project name="zlib" path="l4re/pkg/zlib" />
+</manifest>

@@ -1,0 +1,19 @@
+# QEMU run tasks.
+#
+# Maps to the "Running the Hello World! Program" section of
+# https://l4re.org/getting_started/make.html
+
+version: '3'
+
+tasks:
+  run:
+    desc: 'Run an L4Re scenario in QEMU (default: hello-cfg). Use SCENARIO=<name> to override.'
+    vars:
+      SCENARIO: '{{.SCENARIO | default "hello-cfg"}}'
+    deps: [fiasco:build, l4re:build]
+    interactive: true
+    cmds:
+      - |
+        make -C '{{.L4RE_OBJDIR}}' \
+          E='{{.SCENARIO}}' qemu \
+          MODULE_SEARCH_PATH='{{.KERNEL_OBJDIR}}:{{.L4RE_SRCDIR}}/conf/examples'

@@ -1,0 +1,11 @@
+# Source trees fetched by ham
+sources/
+
+# All build artifacts and intermediate outputs
+output/
+
+# Auto-installed ham (when not on system PATH)
+tools/ham/
+
+# Taskfile fingerprint cache
+.task/

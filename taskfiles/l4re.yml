@@ -1,0 +1,45 @@
+# L4Re Operating System Framework build tasks.
+#
+# Maps to the "Building L4Re" section of
+# https://l4re.org/getting_started/make.html
+
+version: '3'
+
+tasks:
+  init:
+    desc: Initialise the L4Re build directory and seed Makeconf.local
+    status:
+      - test -f '{{.L4RE_OBJDIR}}/Makeconf'
+    preconditions:
+      - sh: test -d '{{.L4RE_SRCDIR}}'
+        msg: 'L4Re sources missing. Run: task sources:sync'
+    cmds:
+      # Match Fiasco's behavior defensively: only ensure the parent exists
+      # and let `make B=...` create the build dir itself.
+      - mkdir -p "$(dirname '{{.L4RE_OBJDIR}}')"
+      - make -C '{{.L4RE_SRCDIR}}' B='{{.L4RE_OBJDIR}}'
+      # Seed Makeconf.local in the source tree so plain `make` from there
+      # uses our build directory by default. Idempotent.
+      - |
+        MKLOCAL='{{.L4RE_SRCDIR}}/Makeconf.local'
+        if [ ! -f "$MKLOCAL" ]; then
+          printf 'O = %s\n' '{{.L4RE_OBJDIR}}' > "$MKLOCAL"
+        fi
+
+  build:
+    desc: Build L4Re
+    deps: [init]
+    cmds:
+      - make -C '{{.L4RE_OBJDIR}}' -j{{.JOBS}}
+
+  config:
+    desc: Open the L4Re build configuration menu (interactive)
+    deps: [init]
+    interactive: true
+    cmds:
+      - make -C '{{.L4RE_OBJDIR}}' config
+
+  clean:
+    desc: Remove the L4Re build directory
+    cmds:
+      - rm -rf '{{.L4RE_OBJDIR}}'

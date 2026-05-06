@@ -1,0 +1,55 @@
+# Source management: ham bootstrap, init, and sync.
+#
+# Uses the vendored manifest at config/manifest/default.xml via
+# `ham init --file`, so no remote manifest URL is required.
+
+version: '3'
+
+vars:
+  HAM_LOCAL_DIR: '{{.REPO_ROOT}}/tools/ham'
+
+tasks:
+  ham:ensure:
+    desc: Ensure 'ham' is available; auto-clone into tools/ham if missing on PATH
+    internal: false
+    run: once
+    status:
+      - command -v ham >/dev/null 2>&1 || test -x '{{.HAM_LOCAL_DIR}}/ham'
+    cmds:
+      - mkdir -p '{{.REPO_ROOT}}/tools'
+      - git clone --depth 1 https://github.com/L4Re/ham.git '{{.HAM_LOCAL_DIR}}'
+
+  init:
+    desc: Initialise the ham meta project in sources/ using the vendored manifest
+    deps: [ham:ensure]
+    status:
+      - test -d '{{.SOURCES_DIR}}/.ham'
+    cmds:
+      - mkdir -p '{{.SOURCES_DIR}}'
+      # Resolve ham binary: prefer system, fall back to vendored copy.
+      - |
+        HAM_BIN="$(command -v ham || echo '{{.HAM_LOCAL_DIR}}/ham')"
+        "$HAM_BIN" -C '{{.SOURCES_DIR}}' init --file '{{.MANIFEST}}'
+
+  sync:
+    desc: Fetch / update all repositories listed in the vendored manifest
+    deps: [init]
+    cmds:
+      - |
+        HAM_BIN="$(command -v ham || echo '{{.HAM_LOCAL_DIR}}/ham')"
+        "$HAM_BIN" -C '{{.SOURCES_DIR}}' sync
+
+  manifest:refresh:
+    desc: Re-sync after editing config/manifest/default.xml
+    deps: [ham:ensure]
+    cmds:
+      - |
+        HAM_BIN="$(command -v ham || echo '{{.HAM_LOCAL_DIR}}/ham')"
+        "$HAM_BIN" -C '{{.SOURCES_DIR}}' sync
+
+  reset:
+    desc: Remove sources/ entirely and re-sync (use after path-changing manifest edits)
+    prompt: This will delete sources/. Continue?
+    cmds:
+      - rm -rf '{{.SOURCES_DIR}}'
+      - task: sync
