@@ -1,0 +1,4 @@
+[submodule "third_party/tamago"]
+	path = third_party/tamago
+	url = https://github.com/mynetz/tamago.git
+	branch = l4re-native

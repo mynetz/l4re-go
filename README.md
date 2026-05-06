@@ -11,15 +11,21 @@ This repository is the integration project that orchestrates the toolchain
 
 - L4Re Operating System Framework
 - Fiasco microkernel
-- tamago Go runtime (planned, future iteration)
+- tamago Go toolchain & library (`third_party/tamago` submodule, fork
+  `mynetz/tamago` branch `l4re-native`)
+- In-tree Go applications under `apps/`
 - Taskfile — build/run orchestration
 
 ## Quick start
 
 ```sh
-task bootstrap   # ham sync, build fiasco, build l4re
-task qemu:run    # run hello-cfg in QEMU
+task bootstrap          # ham sync, build fiasco, build l4re
+task qemu:run           # run hello-cfg in QEMU
+
+task tamago:ensure      # init submodule, build tamago wrapper, fetch tamago-go
+task apps:hello:build   # build apps/hello with GOOS=tamago
+task apps:hello:run     # iteration 2a host smoke test
 ```
 
 See [`docs/`](./docs) for architecture, build system, conventions, manifest
-handling, tutorial mapping, and roadmap.
+handling, tamago integration, application layout, and roadmap.

@@ -37,6 +37,8 @@ includes:
   fiasco:  ./taskfiles/fiasco.yml
   l4re:    ./taskfiles/l4re.yml
   qemu:    ./taskfiles/qemu.yml
+  tamago:  ./taskfiles/tamago.yml
+  apps:    ./taskfiles/apps.yml
 
 tasks:
   default:

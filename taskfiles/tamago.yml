@@ -1,0 +1,64 @@
+# tamago toolchain orchestration.
+#
+# tamago is split across two upstream repositories:
+#   - github.com/usbarmory/tamago      (Go *library*: SoC/board/user-space packages)
+#   - github.com/usbarmory/tamago-go   (modified Go *toolchain* adding GOOS=tamago)
+#
+# The library is vendored as a submodule at third_party/tamago tracking the
+# fork mynetz/tamago on branch l4re-native. The toolchain is auto-fetched by
+# the helper at github.com/usbarmory/tamago/cmd/tamago, which clones the
+# matching tamago-go release and runs make.bash.
+#
+# We build a small wrapper binary tools/tamago-bin out of cmd/tamago from
+# inside a *consumer* module (apps/hello) so its build info pins the tamago
+# library version (cmd/tamago refuses to run when invoked from the tamago
+# module itself, where the version reads as "(devel)"). The wrapper then
+# exec's the cached tamago-go 'go' binary with GOROOT set appropriately.
+
+version: '3'
+
+vars:
+  TAMAGO_SUBMODULE: '{{.REPO_ROOT}}/third_party/tamago'
+  TAMAGO_BIN: '{{.REPO_ROOT}}/tools/tamago-bin'
+  # Consumer module used to build the wrapper. Any module that pins
+  # github.com/usbarmory/tamago at a tagged version will do; we use the
+  # hello app because it is always present.
+  TAMAGO_CONSUMER_DIR: '{{.REPO_ROOT}}/apps/hello'
+
+tasks:
+  submodule:ensure:
+    desc: Ensure third_party/tamago is initialised
+    status:
+      - test -f '{{.TAMAGO_SUBMODULE}}/go.mod'
+    cmds:
+      - git -C '{{.REPO_ROOT}}' submodule update --init --recursive third_party/tamago
+
+  bin:
+    desc: Build the cmd/tamago wrapper into tools/tamago-bin
+    deps: [submodule:ensure]
+    sources:
+      - '{{.TAMAGO_SUBMODULE}}/cmd/tamago/**/*.go'
+      - '{{.TAMAGO_CONSUMER_DIR}}/go.mod'
+    generates:
+      - '{{.TAMAGO_BIN}}'
+    cmds:
+      - mkdir -p '{{.REPO_ROOT}}/tools'
+      - cd '{{.TAMAGO_CONSUMER_DIR}}' && go build -o '{{.TAMAGO_BIN}}' github.com/usbarmory/tamago/cmd/tamago
+
+  toolchain:warm:
+    desc: Trigger one-time download/build of the matching tamago-go toolchain
+    deps: [bin]
+    cmds:
+      - '{{.TAMAGO_BIN}} version'
+
+  ensure:
+    desc: One-shot bootstrap (submodule + wrapper + toolchain)
+    cmds:
+      - task: submodule:ensure
+      - task: bin
+      - task: toolchain:warm
+
+  clean:
+    desc: Remove the wrapper binary (does not touch ~/.cache/tamago-go)
+    cmds:
+      - rm -f '{{.TAMAGO_BIN}}'

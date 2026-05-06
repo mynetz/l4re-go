@@ -37,9 +37,14 @@ l4re-go-prj/
 ├── taskfiles/                  # included sub-taskfiles
 ├── config/                     # tracked, hand-edited configuration
 │   └── manifest/default.xml
+├── apps/                       # in-tree Go applications targeting L4Re
+│   └── hello/                  # each app is a self-contained Go module
+├── third_party/                # tracked submodules (forks we may patch)
+│   └── tamago/                 # mynetz/tamago, branch l4re-native
 ├── docs/                       # agent-consumable documentation
 ├── tools/                      # auto-managed helpers (gitignored)
-│   └── ham/                    # cloned only if system ham is missing
+│   ├── ham/                    # cloned only if system ham is missing
+│   └── tamago-bin              # built by 'task tamago:bin'
 ├── sources/                    # gitignored; populated by `task sources:sync`
 └── output/                     # gitignored; all build artifacts
     └── build/<component>/<arch>/
@@ -47,16 +52,26 @@ l4re-go-prj/
 
 ## What is tracked vs. ignored
 
-Tracked: `Taskfile.yml`, `taskfiles/`, `config/`, `docs/`, `README.md`,
-`.gitignore`.
+Tracked: `Taskfile.yml`, `taskfiles/`, `config/`, `apps/`, `third_party/`
+(submodule pointers and `.gitmodules`), `docs/`, `README.md`, `.gitignore`.
 
-Ignored: `sources/`, `output/`, `tools/ham/`, `.task/`.
+Ignored: `sources/`, `output/`, `tools/ham/`, `tools/tamago-bin`, `.task/`.
+
+## Submodules
+
+`third_party/` holds git submodules for upstream code we may patch. The
+only entry today is `third_party/tamago` (fork of `usbarmory/tamago` at
+`mynetz/tamago`, branch `l4re-native`). Pinning is by commit SHA (managed
+by git's submodule mechanism). Consumers (Go modules under `apps/`) point
+at this path via a `replace` directive in their own `go.mod`.
 
 ## Task naming
 
-- Namespaces match components: `sources:`, `fiasco:`, `l4re:`, `qemu:`.
+- Namespaces match components: `sources:`, `fiasco:`, `l4re:`, `qemu:`,
+  `tamago:`, `apps:`.
 - Each component exposes a consistent verb set where applicable: `init`,
-  `build`, `config`, `clean`.
+  `build`, `config`, `clean`. App tasks use `<app>:build`, `<app>:run`,
+  `<app>:clean`.
 - Top-level meta tasks: `bootstrap`, `clean`, `distclean`, `default`.
 
 ## Architecture parameter

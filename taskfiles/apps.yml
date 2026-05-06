@@ -1,0 +1,49 @@
+# Build orchestration for in-tree Go applications targeting L4Re via tamago.
+#
+# Iteration 2a delivers only the toolchain smoke test: apps/hello compiled
+# with GOOS=tamago using the upstream user/linux overlay, runnable as a
+# normal Linux process. The L4Re-native target (user/l4re overlay + L4Re
+# pkg) is deferred to iteration 2b.
+#
+# Each app under apps/<name>/ is a self-contained Go module pinning
+# github.com/usbarmory/tamago via a replace directive at ../../third_party/tamago.
+
+version: '3'
+
+vars:
+  APPS_OUT: '{{.REPO_ROOT}}/output/build/apps'
+
+tasks:
+  hello:build:
+    desc: Build apps/hello with GOOS=tamago (user/linux overlay, runs on host)
+    deps: [':tamago:bin']
+    sources:
+      - '{{.REPO_ROOT}}/apps/hello/main.go'
+      - '{{.REPO_ROOT}}/apps/hello/go.mod'
+    generates:
+      - '{{.APPS_OUT}}/hello/x86_64/hello'
+    cmds:
+      - mkdir -p '{{.APPS_OUT}}/hello/x86_64'
+      - |
+        cd '{{.REPO_ROOT}}/apps/hello' && \
+          GOOS=tamago GOARCH=amd64 \
+          GOOSPKG=github.com/usbarmory/tamago \
+          '{{.REPO_ROOT}}/tools/tamago-bin' build \
+            -ldflags "-T 0x10010000 -R 0x1000" \
+            -o '{{.APPS_OUT}}/hello/x86_64/hello' .
+
+  hello:run:
+    desc: Run the (Linux-overlay) hello binary on the host as a smoke test
+    deps: [hello:build]
+    cmds:
+      - '{{.APPS_OUT}}/hello/x86_64/hello'
+
+  hello:clean:
+    desc: Remove apps/hello build outputs
+    cmds:
+      - rm -rf '{{.APPS_OUT}}/hello'
+
+  clean:
+    desc: Remove all app build outputs
+    cmds:
+      - rm -rf '{{.APPS_OUT}}'

@@ -7,5 +7,8 @@ output/
 # Auto-installed ham (when not on system PATH)
 tools/ham/
 
+# tamago wrapper binary built by 'task tamago:bin'
+tools/tamago-bin
+
 # Taskfile fingerprint cache
 .task/
