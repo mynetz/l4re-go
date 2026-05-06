@@ -26,7 +26,7 @@ No Go content yet. This iteration only proves the toolchain works.
 This iteration deliberately does **not** run on L4Re yet; it validates the
 toolchain, submodule, and build orchestration only.
 
-## Iteration 2b — minimal Go-on-L4Re task
+## Iteration 2b — minimal Go-on-L4Re task (in progress)
 
 Modelled on [`go-boot`](https://github.com/usbarmory/go-boot), a tamago
 unikernel that talks to UEFI runtime services without cgo or libUEFI
@@ -55,6 +55,25 @@ Estimated scope: ~400 lines of new Go + asm in the overlay, structurally
 identical to `go-boot/uefi/x64/`. The L4Re-specific knowledge is narrow:
 Fiasco amd64 syscall ABI, `l4re_env_t` layout, `L4::Vcon::write` opcode —
 all documented in `sources/l4re/pkg/l4re-core/{l4sys,l4re}/include/`.
+
+Current state: overlay package landed on the `l4re-native` branch of the
+fork; tamago-built ELF is loaded by ned/moe; cpuinit runs and hands
+control to the Go runtime, which then faults inside `runtime.settls`
+because tamago-go's TLS bring-up assumes Linux's `arch_prctl(SET_FS)`
+syscall semantics. Fiasco does not serve that ABI. Completing 2b
+requires patching tamago-go (the toolchain), tracked as iteration 2c.
+
+## Iteration 2c — tamago-go TLS hook for L4Re
+
+- Fork `usbarmory/tamago-go` and add a new `runtime/goos` overlay hook for
+  `settls` (e.g. `goos.SetTLS func(base uintptr) error`), default
+  implementation matching today's WRMSR/arch_prctl behaviour.
+- In `user/l4re`, wire `goos.SetTLS` to an L4 IPC call to the main-thread
+  capability invoking `L4_THREAD_AMD64_SET_SEGMENT_BASE_OP`.
+- Add a second submodule `third_party/tamago-go` (or use a fork URL via
+  the `cmd/tamago` helper environment), pinning the patched toolchain.
+- Goal: complete iteration 2b's QEMU validation — `task qemu:run`
+  prints "Hello from Go on L4Re".
 
 ## Iteration 3 — IPC bindings
 

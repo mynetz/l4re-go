@@ -82,7 +82,13 @@ overlay. It does **not** run on L4Re yet. It validates:
 - the consumer-module `replace` pattern,
 - the Taskfile ergonomics.
 
-### Iteration 2b (planned) — native L4Re task
+### Iteration 2b (in progress) — native L4Re task
+
+The `user/l4re` overlay package now exists in the submodule on branch
+`l4re-native`. It implements the package layout described below and
+builds cleanly. End-to-end QEMU validation is **not yet** functional;
+execution stalls inside the Go runtime's TLS bring-up, see "Status" at
+the end of this section.
 
 The next iteration replaces the import with
 `github.com/usbarmory/tamago/user/l4re` (a new package added on the
@@ -165,7 +171,41 @@ The L4Re-specific knowledge needed is narrow:
 
 All three are documented in
 `sources/l4re/pkg/l4re-core/{l4sys,l4re}/include/` (available after
-`task sources:sync`). Estimate: ~400 lines of Go + asm in the overlay,
-plus a small in-tree L4Re pkg under `apps/hello/l4re-pkg/` (Control +
-Makefile + `hello-go.cfg`) that copies the tamago-built ELF into the L4Re
-bin tree and registers a ned scenario.
+`task sources:sync`). The current overlay totals ~250 lines of Go + asm.
+
+The L4Re pkg is currently *not* a real L4Re pkg under `sources/l4re/pkg/`.
+Instead, the integration repo carries a small `apps/hello/l4re-pkg/`
+directory containing only `modules.list` and `hello-go.cfg`. The
+tamago-built ELF is dropped into `output/build/apps/hello/x86_64/` and
+exposed via `MODULE_SEARCH_PATH` to L4Re's `make E=hello-go-cfg qemu`.
+This avoids modifying the ham-managed `sources/l4re/` tree.
+
+#### Status (this commit)
+
+- `task apps:hello:build` produces `output/build/apps/hello/x86_64/hello-go`
+  (~10 MB, includes 8 MiB BSS pad for the runtime heap).
+- `task apps:hello:qemu` boots: bootstrap → fiasco → sigma0 → moe → ned
+  loads the binary and jumps to its ELF entry. `cpuinit` runs and
+  successfully transfers control to `runtime.rt0_amd64_tamago` inside the
+  tamago-go runtime.
+- Execution then faults inside `runtime.settls` (defined in
+  `tamago-go/src/runtime/sys_tamago_amd64.s`). At ring 3 (userspace), that
+  routine issues `syscall` with `RAX = 0x9e` (Linux `arch_prctl`,
+  `ARCH_SET_FS = 0x1002`). Fiasco interprets `syscall` as the L4 IPC
+  vector, returns garbage, and the subsequent `%fs:-8` access faults.
+- Setting the FS base on L4Re requires an L4 IPC to the thread capability
+  (`L4_THREAD_AMD64_SET_SEGMENT_BASE_OP = 0x12`, `L4_PROTO_THREAD = -12`,
+  segment selector `L4_AMD64_SEGMENT_FS = 0`, base in `MR[1]`,
+  `l4_ipc_call` to `l4re_env_t.main_thread`). Doing this from cpuinit
+  alone is insufficient because tamago-go's runtime calls `settls` again
+  during world bring-up, which would clobber any FS base we pre-set.
+- Resolving this cleanly requires patching tamago-go itself: either add a
+  `runtime/goos` hook for `settls`, or replace the inlined
+  `arch_prctl`/`WRMSR` body in `sys_tamago_amd64.s` with a call into the
+  overlay-provided L4 IPC helper. That patch is outside the scope of the
+  library-side overlay and pushes the work into the next iteration.
+
+In the meantime the overlay code on branch `l4re-native` of
+[mynetz/tamago](https://github.com/mynetz/tamago) and the in-tree
+`apps/hello/l4re-pkg/` artefacts stand as a checkpoint that exercises
+everything except the final TLS bring-up.

@@ -1,18 +1,22 @@
 // hello is a minimal Go application targeting L4Re via tamago.
 //
-// During iteration 2a (toolchain smoke test) the application imports the
-// upstream user/linux overlay and runs as a normal Linux process compiled
-// with GOOS=tamago. Iteration 2b will swap the import for user/l4re once
-// that overlay exists in third_party/tamago.
+// Iteration 2b: imports the in-tree user/l4re overlay (added in the
+// third_party/tamago submodule on the l4re-native branch). The resulting
+// ELF is loaded as a native L4Re task by ned/moe. printk reaches the
+// L4Re log capability via a hand-written L4 IPC trampoline; see
+// docs/tamago.md for the design.
 
 package main
 
 import (
 	"fmt"
 
-	_ "github.com/usbarmory/tamago/user/linux"
+	_ "github.com/usbarmory/tamago/user/l4re"
 )
 
 func main() {
-	fmt.Println("Hello from Go (tamago user/linux smoke test)")
+	fmt.Println("Hello from Go on L4Re")
+
+	// Park forever; L4Re tasks are not expected to return.
+	select {}
 }

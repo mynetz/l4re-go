@@ -9,7 +9,7 @@ tasks:
   init:
     desc: Initialise the L4Re build directory and seed Makeconf.local
     status:
-      - test -f '{{.L4RE_OBJDIR}}/Makeconf'
+      - test -f '{{.L4RE_OBJDIR}}/Makefile'
     preconditions:
       - sh: test -d '{{.L4RE_SRCDIR}}'
         msg: 'L4Re sources missing. Run: task sources:sync'

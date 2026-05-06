@@ -1,0 +1,21 @@
+# Modules list for the hello-go scenario.
+#
+# Used by the L4Re make qemu/image flow when invoked with
+#   MODULES_LIST=apps/hello/l4re-pkg/modules.list
+# and an entry name selected via E=hello-go-cfg.
+#
+# Module lookup paths (MODULE_SEARCH_PATH) must include:
+#   - apps/hello/l4re-pkg/                         (for hello-go.cfg)
+#   - output/build/apps/hello/x86_64/              (for hello-go ELF)
+#   - output/build/fiasco/x86_64/                  (for fiasco)
+#   - sources/l4re/conf/examples/                  (fallback)
+
+default-bootstrap bootstrap
+
+entry hello-go-cfg
+kernel fiasco -serial_esc
+roottask moe rom/hello-go.cfg
+module l4re
+module ned
+module hello-go.cfg
+module hello-go
