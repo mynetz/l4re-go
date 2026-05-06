@@ -14,6 +14,35 @@ expectations against L4Re primitives.
 | [`usbarmory/tamago`](https://github.com/usbarmory/tamago) | Go *library*: SoC/board/userspace overlays | submodule `third_party/tamago` (fork: [`mynetz/tamago`](https://github.com/mynetz/tamago), branch `l4re-native`) |
 | [`usbarmory/tamago-go`](https://github.com/usbarmory/tamago-go) | Modified Go *toolchain* (compiler/linker/runtime adding `GOOS=tamago`) | auto-fetched by the helper `cmd/tamago` into `~/.cache/tamago-go/` |
 
+### Branch / tag layout of `usbarmory/tamago-go`
+
+Browsing `usbarmory/tamago-go` is initially confusing: `master` is a
+straight mirror of upstream `golang/go` and contains **no** tamago
+patches. The actual tamago-modified Go distribution lives on per-version
+branches and is published as tags. As of 2026-05 the relevant refs are:
+
+```
+refs/heads/master        plain upstream Go (no tamago changes)
+refs/heads/tamago1.26.2  tamago-patched runtime/compiler for Go 1.26.2
+refs/tags/tamago-go1.26.2  same commit, tagged for cmd/tamago
+refs/tags/latest         alias to the most recent tamago-goX.Y.Z tag
+```
+
+`cmd/tamago` calls `git clone --depth=1 --branch=tamago-go<X.Y.Z>
+https://github.com/usbarmory/tamago-go ~/.cache/tamago-go/tamago-go<X.Y.Z>`
+where `<X.Y.Z>` comes from the consumer module's `require
+github.com/usbarmory/tamago` line. The cached SDK therefore *does*
+contain the tamago-patched files (`src/runtime/sys_tamago_amd64.s`,
+`src/runtime/goos/`, `src/runtime/rt0_tamago_*.s`, etc.); only the
+`master` branch on the upstream repo lacks them.
+
+The Go upstream proposal [golang/go#73608][73608] tracks the long-term
+goal of folding this work into `GOOS=none`. The tamago-go branches are
+the working implementation; the proposal text and supplementary links
+live on the issue.
+
+[73608]: https://github.com/golang/go/issues/73608
+
 ## Bootstrap
 
 Run once:

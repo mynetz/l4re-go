@@ -65,14 +65,43 @@ requires patching tamago-go (the toolchain), tracked as iteration 2c.
 
 ## Iteration 2c — tamago-go TLS hook for L4Re
 
-- Fork `usbarmory/tamago-go` and add a new `runtime/goos` overlay hook for
-  `settls` (e.g. `goos.SetTLS func(base uintptr) error`), default
-  implementation matching today's WRMSR/arch_prctl behaviour.
+`runtime.settls` is emitted by the Go linker into every binary. Its
+implementation lives in `tamago-go/src/runtime/sys_tamago_amd64.s` (only
+on the per-version branches `tamago1.X.Y` of `usbarmory/tamago-go` —
+`master` of that repo is plain upstream Go and contains no tamago
+patches). The current implementation chooses between WRMSR (ring 0) and
+`syscall RAX=0x9e` (Linux `arch_prctl(SET_FS)`); both are unreachable
+from an L4Re native task in ring 3.
+
+The `runtime/goos` extension surface added by [golang/go#73608][73608]
+exposes the symbols listed in
+`tamago-go/src/runtime/goos/stub.go` (CPUinit, Hwinit0, Hwinit1, Printk,
+Nanotime, RamStart, RamSize, RamStackOffset, GetRandomData, InitRNG;
+optional Bloc, Exit, Idle, ProcID, Task) — but **not** `settls`. So a
+library-side overlay alone cannot redirect TLS setup; the toolchain
+itself must be patched.
+
+[73608]: https://github.com/golang/go/issues/73608
+
+Plan:
+
+- Fork `usbarmory/tamago-go` (recommended: `mynetz/tamago-go`, branch
+  `l4re-native` mirroring our library-side branch). Patch
+  `src/runtime/sys_tamago_amd64.s` so the `application:` branch of
+  `runtime.settls` calls into an externally-defined symbol (e.g.
+  `runtime/goos.SetTLS`) rather than issuing `syscall RAX=0x9e`. Default
+  implementation in `runtime/goos/stub.go` keeps today's behaviour for
+  Linux userspace builds.
 - In `user/l4re`, wire `goos.SetTLS` to an L4 IPC call to the main-thread
-  capability invoking `L4_THREAD_AMD64_SET_SEGMENT_BASE_OP`.
-- Add a second submodule `third_party/tamago-go` (or use a fork URL via
-  the `cmd/tamago` helper environment), pinning the patched toolchain.
-- Goal: complete iteration 2b's QEMU validation — `task qemu:run`
+  capability invoking `L4_THREAD_AMD64_SET_SEGMENT_BASE_OP` (segment 0 =
+  FS, base in `MR[1]`, `l4_ipc_call` to `l4re_env_t.main_thread`).
+- Have `cmd/tamago` clone the patched fork rather than upstream
+  `usbarmory/tamago-go`. Two ways:
+  (a) check in a second submodule `third_party/tamago-go` and modify the
+  helper to clone from there;
+  (b) set `TAMAGO=/path/to/forked/bin/go` in the Taskfile and bypass
+  `cmd/tamago`'s built-in clone logic entirely.
+- Goal: complete iteration 2b's QEMU validation — `task apps:hello:qemu`
   prints "Hello from Go on L4Re".
 
 ## Iteration 3 — IPC bindings

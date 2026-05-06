@@ -31,10 +31,24 @@ tasks:
             -o '{{.APPS_OUT}}/hello/x86_64/hello-go' .
 
   hello:qemu:
-    desc: Boot the hello-go-cfg scenario in QEMU
+    desc: 'Boot the hello-go-cfg scenario in QEMU (WIP: faults in runtime.settls; see apps/hello/README.md)'
     deps: [hello:build, ':fiasco:build', ':l4re:build']
     interactive: true
     cmds:
+      - |
+        cat <<'EOF'
+        # ------------------------------------------------------------------
+        # Iteration 2b WIP: this scenario currently faults inside
+        # runtime.settls (tamago-go assumes Linux's arch_prctl(SET_FS) ABI;
+        # Fiasco does not serve it). The fix lives in tamago-go itself and
+        # is tracked as iteration 2c in docs/roadmap.md.
+        #
+        # The expected output today: bootstrap -> Fiasco -> sigma0 -> moe ->
+        # ned loads hello-go, cpuinit runs, then a 'l4re_itas: FATAL'
+        # report from runtime.settls at rip ~0x10080622 with fs_base = 0.
+        # See apps/hello/README.md for the full explanation.
+        # ------------------------------------------------------------------
+        EOF
       - |
         make -C '{{.L4RE_OBJDIR}}' \
           E=hello-go-cfg qemu \
