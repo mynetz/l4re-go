@@ -29,3 +29,12 @@ task apps:hello:run     # iteration 2a host smoke test
 
 See [`docs/`](./docs) for architecture, build system, conventions, manifest
 handling, tamago integration, application layout, and roadmap.
+
+## License
+
+This repository is licensed under the BSD 3-Clause License. See
+[`LICENSE`](./LICENSE) for the full text.
+
+The `third_party/tamago` submodule, the `sources/` tree (fetched by ham
+from the L4Re project), and the auto-fetched `tamago-go` toolchain remain
+under their own upstream licenses.
