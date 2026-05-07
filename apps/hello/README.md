@@ -9,20 +9,16 @@ package added on the `l4re-native` branch of the `mynetz/tamago`
 submodule under `third_party/tamago/`. The build pipeline produces an
 ELF that L4Re's loader (ned/moe) can mount and start.
 
-**`task apps:hello:qemu` does not yet print "Hello from Go on L4Re".**
-The chain reaches the binary's `cpuinit` and transfers control to
-`runtime.rt0_amd64_tamago` inside the tamago-go runtime, but Go's TLS
-bring-up (`runtime.settls` in `tamago-go/src/runtime/sys_tamago_amd64.s`)
-faults: at ring 3 it issues `syscall RAX=0x9e` expecting Linux's
-`arch_prctl(ARCH_SET_FS)` semantics, which Fiasco does not serve.
-Setting FS base on L4Re requires an L4 IPC to the main-thread
-capability (`L4_THREAD_AMD64_SET_SEGMENT_BASE_OP`); `runtime.settls` is
-emitted by the Go linker and has no `runtime/goos` extension point, so
-the fix has to land in tamago-go itself.
+**`task apps:hello:qemu` does not yet print from `main`.** The chain
+now successfully loads the binary, runs `cpuinit`, transfers control to
+`runtime.rt0_amd64_tamago`, completes the runtime's TLS self-test
+(thanks to the `runtime/goos.SetTLSUser` hook added in iteration 2c —
+see `docs/settls-blocker.md` and `docs/roadmap.md`), and **then silently
+hangs** somewhere in the post-TLS Go runtime startup chain
+(`osinit`/`schedinit`/`mstart`) before `main.main` runs.
 
-This is tracked as iteration 2c in `docs/roadmap.md` and described in
-detail in `docs/tamago.md`. The current commits (`8a2df82`, `55f9030`)
-are explicitly tagged `[WIP]` for this reason.
+This is tracked as iteration 2c-bringup in `docs/roadmap.md`. The
+current commit is explicitly tagged `[WIP]` for this reason.
 
 ## Build & run
 
@@ -48,6 +44,21 @@ The `tool` directive in `go.mod` registers
 *invoke* the tamago build because the host Go refuses `GOOS=tamago` at
 parse time; the wrapper binary side-steps this by exec'ing the cached
 tamago-go `go` directly.
+
+## Toolchain
+
+This project uses a **forked tamago-go** at
+[`mynetz/tamago-go`](https://github.com/mynetz/tamago-go) on branch
+`tamago1.26.2-l4re`. The fork adds a `runtime/goos.SetTLSUser` hook to
+factor the OS-specific TLS bring-up out of `runtime.settls`. Our
+submodule's `cmd/tamago` is patched to clone from the fork; the SDK
+caches under `~/.cache/tamago-go/tamago-go1.26.2-l4re/` (distinct from
+any upstream tamago-go SDK in the same cache root).
+
+If the host Go is older than 1.24.6, point `GOROOT_BOOTSTRAP` at any
+existing tamago-go SDK before running `task tamago:ensure`; the
+Taskfile's `tamago:toolchain:warm` rule does this automatically when it
+finds `~/.cache/tamago-go/tamago-go1.26.2/` to bootstrap from.
 
 ## Build flags
 

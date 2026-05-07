@@ -63,46 +63,84 @@ because tamago-go's TLS bring-up assumes Linux's `arch_prctl(SET_FS)`
 syscall semantics. Fiasco does not serve that ABI. Completing 2b
 requires patching tamago-go (the toolchain), tracked as iteration 2c.
 
-## Iteration 2c — tamago-go TLS hook for L4Re
+## Iteration 2c — tamago-go TLS hook for L4Re (in progress)
 
 `runtime.settls` is emitted by the Go linker into every binary. Its
 implementation lives in `tamago-go/src/runtime/sys_tamago_amd64.s` (only
 on the per-version branches `tamago1.X.Y` of `usbarmory/tamago-go` —
 `master` of that repo is plain upstream Go and contains no tamago
-patches). The current implementation chooses between WRMSR (ring 0) and
+patches). The original implementation chose between WRMSR (ring 0) and
 `syscall RAX=0x9e` (Linux `arch_prctl(SET_FS)`); both are unreachable
 from an L4Re native task in ring 3.
 
-The `runtime/goos` extension surface added by [golang/go#73608][73608]
-exposes the symbols listed in
-`tamago-go/src/runtime/goos/stub.go` (CPUinit, Hwinit0, Hwinit1, Printk,
-Nanotime, RamStart, RamSize, RamStackOffset, GetRandomData, InitRNG;
-optional Bloc, Exit, Idle, ProcID, Task) — but **not** `settls`. So a
-library-side overlay alone cannot redirect TLS setup; the toolchain
-itself must be patched.
+This iteration introduces a portable hook that factors the OS-specific
+FS_BASE installation into a `runtime/goos.SetTLSUser` symbol overrideable
+by GOOSPKG-substituted overlays (matching the pattern already used for
+`Hwinit0`, `Printk`, `RamStart`, etc.). The fork lives at
+[mynetz/tamago-go](https://github.com/mynetz/tamago-go) on branch
+`tamago1.26.2-l4re`.
 
-[73608]: https://github.com/golang/go/issues/73608
+### Patch summary (in tamago-go fork)
 
-Plan:
+- `src/runtime/sys_tamago_amd64.s` — the `application:` branch of
+  `runtime.settls` becomes `ADDQ $8, DI; CALL runtime/goos.SetTLSUser; RET`.
+- `src/runtime/goos/linux_user_settls_amd64.go` (new) — forward-declares
+  `func SetTLSUser(base uintptr)` for tamago/amd64 builds.
+- `src/runtime/goos/linux_user_amd64.s` — provides the default
+  `arch_prctl(ARCH_SET_FS)` body for Linux userspace builds (pure asm,
+  caller-saved register discipline preserved).
+- `src/runtime/goos/stub.go` — adds the godoc stub used for non-tamago
+  builds.
 
-- Fork `usbarmory/tamago-go` (recommended: `mynetz/tamago-go`, branch
-  `l4re-native` mirroring our library-side branch). Patch
-  `src/runtime/sys_tamago_amd64.s` so the `application:` branch of
-  `runtime.settls` calls into an externally-defined symbol (e.g.
-  `runtime/goos.SetTLS`) rather than issuing `syscall RAX=0x9e`. Default
-  implementation in `runtime/goos/stub.go` keeps today's behaviour for
-  Linux userspace builds.
-- In `user/l4re`, wire `goos.SetTLS` to an L4 IPC call to the main-thread
-  capability invoking `L4_THREAD_AMD64_SET_SEGMENT_BASE_OP` (segment 0 =
-  FS, base in `MR[1]`, `l4_ipc_call` to `l4re_env_t.main_thread`).
-- Have `cmd/tamago` clone the patched fork rather than upstream
-  `usbarmory/tamago-go`. Two ways:
-  (a) check in a second submodule `third_party/tamago-go` and modify the
-  helper to clone from there;
-  (b) set `TAMAGO=/path/to/forked/bin/go` in the Taskfile and bypass
-  `cmd/tamago`'s built-in clone logic entirely.
-- Goal: complete iteration 2b's QEMU validation — `task apps:hello:qemu`
-  prints "Hello from Go on L4Re".
+The patch is 4 files, ~70 lines added. Verified backward-compatible:
+`GOOS=tamago GOARCH=amd64` `fmt.Println` programs built with the patched
+toolchain still run correctly under Linux userspace using the default
+`runtime/goos` overlay (the `arch_prctl` path).
+
+### L4Re overlay side (third_party/tamago, branch l4re-native)
+
+- `goos/goos.go` declares `SetTLSUser(base uintptr)` in the tamago
+  library's GOOSPKG-substituted `runtime/goos` package.
+- `goos/goos_amd64.s` defines `runtime/goos.SetTLSUser` as
+  `JMP setTLSUser(SB)`, mirroring how `runtime/goos.CPUInit` jumps to
+  the overlay-supplied `cpuinit`.
+- `user/l4re/settls_amd64.s` (new) provides `setTLSUser`: stages
+  `MR[0]=0x12 (THREAD_SET_SEG_OP|FS=0)`, `MR[1]=base` in the UTCB at
+  `gs:0`; reads `l4re_env_t.main_thread` (offset `0x20`) into the cap
+  register; issues `SYSCALL` with the L4 IPC register convention
+  (`RAX=msgtag`, `RDX=cap|L4_SYSF_CALL`, `RSI=0`, `R8=0`).
+
+### `cmd/tamago` redirection
+
+`third_party/tamago/cmd/tamago/main.go` is patched (on the
+`l4re-native` submodule branch) to clone from `mynetz/tamago-go` at
+branch `tamago<X.Y.Z>-l4re` instead of upstream `usbarmory/tamago-go` at
+tag `tamago-go<X.Y.Z>`. The cache directory is named with an `-l4re`
+suffix to coexist with any upstream-cached SDK.
+
+### Status (this commit)
+
+- Patched toolchain builds cleanly via `make.bash` (with
+  `GOROOT_BOOTSTRAP` pointing at any cached tamago-go SDK).
+- Patched toolchain produces working Linux userspace tamago binaries
+  (verified: a `fmt.Println` test prints normally).
+- Patched toolchain produces L4Re-targeted binaries that **load**, run
+  cpuinit, return cleanly from `setTLSUser` (set_fs_base IPC), and pass
+  the runtime's TLS self-test in `runtime.rt0_amd64_tamago` (no FATAL
+  from l4re_itas).
+- Execution then **silently stalls** somewhere in the post-TLS bring-up
+  before reaching `main.main`. Suspected places: `runtime.osinit`,
+  `runtime.schedinit`, or `runtime.mstart`'s scheduler loop, possibly
+  due to incomplete clock/scheduler hooks in `user/l4re` (our
+  `Nanotime` is a fake monotonic counter; `Idle`, `ProcID`, `Task` are
+  unset). No exception is delivered, so the silent state is consistent
+  with the runtime busy-waiting for some condition that never becomes
+  true.
+
+Next steps (deferred): instrument with QEMU's GDB stub or
+`runtime.println` calls woven into the runtime's startup chain to find
+the precise stall point, then either provide the missing hook or adjust
+our overlay's nanotime/scheduler behaviour.
 
 ## Iteration 3 — IPC bindings
 

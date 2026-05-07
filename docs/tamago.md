@@ -12,7 +12,7 @@ expectations against L4Re primitives.
 | Repo | Role | Where it lives in this project |
 |---|---|---|
 | [`usbarmory/tamago`](https://github.com/usbarmory/tamago) | Go *library*: SoC/board/userspace overlays | submodule `third_party/tamago` (fork: [`mynetz/tamago`](https://github.com/mynetz/tamago), branch `l4re-native`) |
-| [`usbarmory/tamago-go`](https://github.com/usbarmory/tamago-go) | Modified Go *toolchain* (compiler/linker/runtime adding `GOOS=tamago`) | auto-fetched by the helper `cmd/tamago` into `~/.cache/tamago-go/` |
+| [`usbarmory/tamago-go`](https://github.com/usbarmory/tamago-go) | Modified Go *toolchain* (compiler/linker/runtime adding `GOOS=tamago`) | fork: [`mynetz/tamago-go`](https://github.com/mynetz/tamago-go), branch `tamago1.26.2-l4re`. Auto-fetched by the helper `cmd/tamago` (patched to point at the fork) into `~/.cache/tamago-go/tamago-go1.26.2-l4re/` |
 
 ### Branch / tag layout of `usbarmory/tamago-go`
 

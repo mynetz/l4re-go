@@ -49,7 +49,15 @@ tasks:
     desc: Trigger one-time download/build of the matching tamago-go toolchain
     deps: [bin]
     cmds:
-      - '{{.TAMAGO_BIN}} version'
+      # tamago-go's make.bash needs Go >= 1.24.6 to bootstrap. If the host
+      # Go is older, point GOROOT_BOOTSTRAP at any cached tamago-go SDK
+      # (which itself meets the requirement). Idempotent: harmless if the
+      # variable is already set or if no fallback SDK exists.
+      - |
+        if [ -z "$GOROOT_BOOTSTRAP" ] && [ -d "$HOME/.cache/tamago-go/tamago-go1.26.2" ]; then
+          export GOROOT_BOOTSTRAP="$HOME/.cache/tamago-go/tamago-go1.26.2"
+        fi
+        '{{.TAMAGO_BIN}}' version
 
   ensure:
     desc: One-shot bootstrap (submodule + wrapper + toolchain)

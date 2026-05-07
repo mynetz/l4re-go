@@ -9,13 +9,15 @@
 package main
 
 import (
-	"fmt"
-
 	_ "github.com/usbarmory/tamago/user/l4re"
 )
 
 func main() {
-	fmt.Println("Hello from Go on L4Re")
+	// Use the runtime's builtin println, which reaches our overlay's
+	// goos.Printk (linknamed onto runtime.printk). fmt.Println would go
+	// through os.Stdout / Linux-style sys_write, which we have not yet
+	// wired up for L4Re.
+	println("Hello from Go on L4Re")
 
 	// Park forever; L4Re tasks are not expected to return.
 	select {}
