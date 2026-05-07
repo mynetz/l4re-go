@@ -9,16 +9,33 @@ package added on the `l4re-native` branch of the `mynetz/tamago`
 submodule under `third_party/tamago/`. The build pipeline produces an
 ELF that L4Re's loader (ned/moe) can mount and start.
 
-**`task apps:hello:qemu` does not yet print from `main`.** The chain
-now successfully loads the binary, runs `cpuinit`, transfers control to
-`runtime.rt0_amd64_tamago`, completes the runtime's TLS self-test
-(thanks to the `runtime/goos.SetTLSUser` hook added in iteration 2c —
-see `docs/settls-blocker.md` and `docs/roadmap.md`), and **then silently
-hangs** somewhere in the post-TLS Go runtime startup chain
-(`osinit`/`schedinit`/`mstart`) before `main.main` runs.
+**`task apps:hello:qemu` does not yet print from `main`.** Today the
+chain successfully loads the binary, runs `cpuinit`, transfers control
+to `runtime.rt0_amd64_tamago`, runs `setTLSUser` (the SET_FS_BASE IPC
+now succeeds — fix landed 2026-05-07; see `docs/settls-blocker.md`
+and `docs/roadmap.md`), passes the runtime's TLS self-test, and reaches
+the Go runtime's startup. The next blocker is an OOM panic from
+`runtime.mallocgc`:
 
-This is tracked as iteration 2c-bringup in `docs/roadmap.md`. The
-current commit is explicitly tagged `[WIP]` for this reason.
+```
+hello-go| runtime: out of memory: cannot allocate 4194304-byte block (0 in use)
+```
+
+`heapPad` in `third_party/tamago/user/l4re/runtime.go` is currently
+8 MiB — too small for Go's arena allocator. Bumping it (or wiring the
+runtime to allocate dataspaces from `l4re_env()->mem_alloc`) is
+tracked as iteration 2d.
+
+## Debugging
+
+```sh
+task apps:hello:qemu:debug   # in one terminal: QEMU paused, gdbstub on :1234
+task apps:hello:gdb          # in another: gdb pre-wired with breakpoints
+                             # (cpuinit, settls, osinit, runtime.main, main.main)
+```
+
+`apps/hello/hello-go.gdbinit` documents the available helpers
+(`hello-help` inside gdb).
 
 ## Build & run
 
@@ -26,7 +43,8 @@ current commit is explicitly tagged `[WIP]` for this reason.
 task tamago:ensure        # one-time: submodule + wrapper + tamago-go SDK
 task apps:hello:build     # produces output/build/apps/hello/x86_64/hello-go
 task apps:hello:qemu      # boots the hello-go-cfg scenario in QEMU
-                          # (will fault inside runtime.settls until 2c lands)
+                          # (currently aborts with OOM in runtime.mallocgc;
+                          #  see Status section above)
 ```
 
 ## Module layout

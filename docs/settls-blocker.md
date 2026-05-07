@@ -1,5 +1,13 @@
 # What `settls` is for, and why Fiasco breaks it
 
+> **Status (2026-05-07): resolved.** The iteration 2b/2c blocker
+> described here is fixed. The bringup sequence now passes through
+> `setTLSUser` and reaches the Go runtime; the next blocker (OOM in
+> `runtime.mallocgc` because `heapPad` is too small) is unrelated.
+>
+> See [Resolution: the off-by-protocol msgtag](#resolution-the-off-by-protocol-msgtag)
+> at the bottom of this document for the actual fix that landed.
+
 This note explains, in detail, why iteration 2b's QEMU run faults inside
 the Go runtime's TLS bring-up before `main.main` ever runs, why this
 problem does not affect tamago's existing `user/linux` target, and what
@@ -364,3 +372,67 @@ self-test in `runtime.rt0_amd64_tamago` passes, no FATAL is reported by
 l4re_itas. A separate, unrelated stall remains in the post-TLS runtime
 startup before `main.main` runs; that is outside the scope of this
 note. See `docs/roadmap.md` iteration 2c for current status.
+
+## Resolution: the off-by-protocol msgtag
+
+The "separate, unrelated stall" mentioned above turned out to be the
+*real* settls bug. Debugging it via QEMU's gdb stub
+(`task apps:hello:qemu:debug` + `task apps:hello:gdb`, both added in
+this commit) showed:
+
+1. `cpuinit`, `runtime.rt0_amd64_tamago`, and `runtime.settls` all ran.
+2. `setTLSUser` was entered with the expected arguments
+   (`%rdi = &m0.tls[0]+8`, `gs:0` populated by Fiasco with the UTCB
+   pointer `0xb3000400`).
+3. The `SYSCALL` transitioned to Fiasco's `entry_sys_fast_ipc_c` and
+   eventually `Thread::do_ipc()`.
+4. Inside `do_ipc`, the calling thread was enqueued as a sender
+   (`Sender::sender_enqueue`) waiting on a partner that would never
+   receive. With `L4_IPC_NEVER` it parked permanently and the kernel
+   started idling in `Kernel_thread::run` — exactly the silent hang we
+   observed.
+
+The cause was the **message tag value**. The overlay built it as
+`0xFFFFFFFFFFFC0002`, intending `(label = -12 = Label_thread, words = 2)`.
+But `L4_msg_tag::proto()` is implemented in
+`fiasco/src/abi/l4_types.cpp` as
+
+```cpp
+long proto() const { return static_cast<long>(_tag) >> 16; }
+```
+
+— a *signed* arithmetic shift. For `0xFFFFFFFFFFFC0002` that yields
+`-4`, not `-12`. The correct two's-complement encoding for `-12` in
+the upper 48 bits is `0xFFFFFFFFFFF40000`, so the full tag should be
+`0xFFFFFFFFFFF40002`.
+
+With the wrong proto, `Thread_object::invoke()`
+(`fiasco/src/kern/thread_object.cpp`) took the generic IPC branch:
+
+```cpp
+if (((op != 0) && !(op & Ipc_send))
+    || (op & Ipc_reply)
+    || f->tag().proto() != L4_msg_tag::Label_thread)  // <-- triggered
+{ /* full IPC dispatch (potentially blocking) */ }
+```
+
+instead of falling through to the synchronous `invoke_arch` dispatch
+that actually services `Op::Set_segment_base_amd64`.
+
+The fix in `third_party/tamago/user/l4re/settls_amd64.s` is two
+character-changes worth, plus a comment:
+
+- `MSGTAG_SET_FSBASE 0xFFFFFFFFFFFC0002` → `0xFFFFFFFFFFF40002`.
+- The destination cap is now `L4_INVALID_CAP` (the canonical
+  "current thread" handle, matching musl's
+  `ptlc_set_tp` and libpthread's `tls_init_tp`) instead of
+  `l4re_env_t.main_thread` (whose value is task-relative and rewritten
+  by `l4re_itas` to a cap that does not match
+  `Caps::Rm_thread_cap << L4_CAP_SHIFT`).
+
+After the fix, `setTLSUser` returns cleanly with `fs_base` installed
+to `&m0.tls[0]+8`, the Go runtime's TLS self-test passes, and
+execution continues into `runtime.osinit` / `runtime.schedinit` /
+`runtime.mstart` / `runtime.main` until the heap allocator hits OOM
+on a 4 MiB arena request (a separate problem tracked as iteration 2d
+in `docs/roadmap.md`).

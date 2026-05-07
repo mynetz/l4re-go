@@ -31,22 +31,23 @@ tasks:
             -o '{{.APPS_OUT}}/hello/x86_64/hello-go' .
 
   hello:qemu:
-    desc: 'Boot the hello-go-cfg scenario in QEMU (WIP: faults in runtime.settls; see apps/hello/README.md)'
+    desc: 'Boot the hello-go-cfg scenario in QEMU (WIP: Go runtime panics on heap arena alloc; see docs/roadmap.md)'
     deps: [hello:build, ':fiasco:build', ':l4re:build']
     interactive: true
     cmds:
       - |
         cat <<'EOF'
         # ------------------------------------------------------------------
-        # Iteration 2b WIP: this scenario currently faults inside
-        # runtime.settls (tamago-go assumes Linux's arch_prctl(SET_FS) ABI;
-        # Fiasco does not serve it). The fix lives in tamago-go itself and
-        # is tracked as iteration 2c in docs/roadmap.md.
+        # Iteration 2c status:
+        #   - settls SET_FS_BASE IPC works; FS_BASE is installed.
+        #   - Go runtime starts and reaches the heap allocator.
+        #   - Currently aborts with "runtime: out of memory: cannot allocate
+        #     4194304-byte block" because heapPad (8 MiB) is too small for
+        #     Go's arena allocator. Tracked as iteration 2d.
         #
-        # The expected output today: bootstrap -> Fiasco -> sigma0 -> moe ->
-        # ned loads hello-go, cpuinit runs, then a 'l4re_itas: FATAL'
-        # report from runtime.settls at rip ~0x10080622 with fs_base = 0.
-        # See apps/hello/README.md for the full explanation.
+        # To debug interactively:
+        #     task apps:hello:qemu:debug    # in one terminal
+        #     task apps:hello:gdb           # in another
         # ------------------------------------------------------------------
         EOF
       - |
@@ -54,6 +55,51 @@ tasks:
           E=hello-go-cfg qemu \
           MODULES_LIST='{{.REPO_ROOT}}/apps/hello/l4re-pkg/modules.list' \
           MODULE_SEARCH_PATH='{{.REPO_ROOT}}/apps/hello/l4re-pkg:{{.APPS_OUT}}/hello/x86_64:{{.KERNEL_OBJDIR}}:{{.L4RE_SRCDIR}}/conf/examples'
+
+  hello:qemu:debug:
+    desc: 'Boot hello-go-cfg in QEMU paused with gdbstub on :1234 (attach with apps:hello:gdb)'
+    deps: [hello:build, ':fiasco:build', ':l4re:build']
+    interactive: true
+    vars:
+      GDB_PORT: '{{.GDB_PORT | default "1234"}}'
+    cmds:
+      - |
+        cat <<EOF
+        # ------------------------------------------------------------------
+        # QEMU is starting in debug mode:
+        #   - CPU halted at reset (-S)
+        #   - gdbstub listening on tcp::{{.GDB_PORT}} (-s shorthand for -gdb tcp::1234)
+        #
+        # In another terminal run:
+        #     task apps:hello:gdb
+        # or attach manually:
+        #     gdb {{.APPS_OUT}}/hello/x86_64/hello-go \\
+        #         -ex 'target remote :{{.GDB_PORT}}'
+        #
+        # In gdb, type 'continue' (or 'c') to start execution.
+        # Override the port with: task apps:hello:qemu:debug GDB_PORT=4242
+        # ------------------------------------------------------------------
+        EOF
+      - |
+        QEMU_OPTIONS='-serial stdio -m 512 -M q35 -S -gdb tcp::{{.GDB_PORT}}' \
+        make -C '{{.L4RE_OBJDIR}}' \
+          E=hello-go-cfg qemu \
+          MODULES_LIST='{{.REPO_ROOT}}/apps/hello/l4re-pkg/modules.list' \
+          MODULE_SEARCH_PATH='{{.REPO_ROOT}}/apps/hello/l4re-pkg:{{.APPS_OUT}}/hello/x86_64:{{.KERNEL_OBJDIR}}:{{.L4RE_SRCDIR}}/conf/examples'
+
+  hello:gdb:
+    desc: 'Attach gdb to a running apps:hello:qemu:debug session (load symbols from the hello-go ELF)'
+    interactive: true
+    vars:
+      GDB_PORT: '{{.GDB_PORT | default "1234"}}'
+      GDB: '{{.GDB | default "gdb"}}'
+    cmds:
+      - |
+        '{{.GDB}}' '{{.APPS_OUT}}/hello/x86_64/hello-go' \
+          -ex 'set pagination off' \
+          -ex 'set confirm off' \
+          -ex 'source {{.REPO_ROOT}}/apps/hello/hello-go.gdbinit' \
+          -ex 'target remote :{{.GDB_PORT}}'
 
   hello:clean:
     desc: Remove apps/hello build outputs

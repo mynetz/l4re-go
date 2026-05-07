@@ -128,19 +128,45 @@ suffix to coexist with any upstream-cached SDK.
   cpuinit, return cleanly from `setTLSUser` (set_fs_base IPC), and pass
   the runtime's TLS self-test in `runtime.rt0_amd64_tamago` (no FATAL
   from l4re_itas).
-- Execution then **silently stalls** somewhere in the post-TLS bring-up
-  before reaching `main.main`. Suspected places: `runtime.osinit`,
-  `runtime.schedinit`, or `runtime.mstart`'s scheduler loop, possibly
-  due to incomplete clock/scheduler hooks in `user/l4re` (our
-  `Nanotime` is a fake monotonic counter; `Idle`, `ProcID`, `Task` are
-  unset). No exception is delivered, so the silent state is consistent
-  with the runtime busy-waiting for some condition that never becomes
-  true.
+- The Go runtime now starts; we reach `runtime.osinit` and the heap
+  allocator. The next blocker is iteration **2d**: an OOM panic in
+  `runtime.mallocgc` because `heapPad` (8 MiB) is too small for Go's
+  arena allocator (it asks for a 4 MiB block which fails the alignment
+  bookkeeping inside the fixed-size pool).
 
-Next steps (deferred): instrument with QEMU's GDB stub or
-`runtime.println` calls woven into the runtime's startup chain to find
-the precise stall point, then either provide the missing hook or adjust
-our overlay's nanotime/scheduler behaviour.
+#### settls debugging story (resolved 2026-05-07)
+
+Initial QEMU runs hung silently somewhere after `setTLSUser` returned.
+QEMU's gdbstub (now exposed as `task apps:hello:qemu:debug` +
+`task apps:hello:gdb`) revealed the kernel idle-looped inside
+`Kernel_thread::run` while our user thread was parked in
+`Sender::sender_enqueue` — a classic "send-to-self that never gets
+received" deadlock.
+
+Root cause: the message tag in `setTLSUser` was off-by-protocol.
+`runtime/goos.SetTLSUser` built the L4 IPC msgtag as
+`0xFFFFFFFFFFFC0002`, expecting `proto = -12` (`Label_thread`). But
+`L4_msg_tag::proto()` is a *signed* arithmetic shift: `(int64)tag >> 16`.
+For `0xFFFFFFFFFFFC0002` that yields `-4`, not `-12`. The correct
+encoding for `(label = -12, words = 2)` is `0xFFFFFFFFFFF40002`.
+
+With the wrong proto, `Thread_object::invoke()` took the generic IPC
+branch (because `tag.proto() != Label_thread`) instead of dispatching
+synchronously to `invoke_arch`. The IPC then enqueued the calling
+thread as a sender to itself with `L4_IPC_NEVER`, and Fiasco had no
+one to wake it.
+
+Fix landed in `third_party/tamago/user/l4re/settls_amd64.s`:
+- Use the correct msgtag value `0xFFFFFFFFFFF40002`.
+- Pass `L4_INVALID_CAP | L4_SYSF_CALL` as the destination (the
+  canonical idiom for "current thread", matching `musl`'s
+  `ptlc_set_tp` and `libpthread`'s `tls_init_tp` — see
+  `sources/l4re/pkg/l4re-core/libc/musl/libc/ARCH-x86_64/impl-libc-api-arch.c:17`
+  and
+  `sources/l4re/pkg/l4re-core/libpthread/src/sysdeps/x86_64/tls.h:150`).
+  This drops the dependency on `l4re_env_t.main_thread` (which itas
+  rewrites to a task-local cap that does not match
+  `Caps::Rm_thread_cap << L4_CAP_SHIFT`).
 
 ## Iteration 3 — IPC bindings
 
